@@ -1,8 +1,8 @@
 export const defaultContent = {
-  seoTitle: 'Mills Rocket — Création de sites, SaaS et automatisations IA',
-  metaDescription: 'Mills Rocket accompagne entrepreneurs, startups et entreprises dans la création rapide de sites web, plateformes SaaS, outils métiers, automatisations IA et projets digitaux sur mesure.',
-  ogTitle: 'Mills Rocket — Création de sites, SaaS et automatisations IA',
-  ogDescription: 'Création rapide de sites web, plateformes SaaS, outils métiers, automatisations IA et projets digitaux sur mesure.',
+  seoTitle: 'Florent Moulin | Solopreneur assisté par IA',
+  metaDescription: 'Je conçois et lance des sites web, SaaS, automatisations IA et outils métiers pour entrepreneurs, startups et entreprises.',
+  ogTitle: 'Florent Moulin | Solopreneur assisté par IA',
+  ogDescription: 'Je conçois et lance des sites web, SaaS, automatisations IA et outils métiers pour entrepreneurs, startups et entreprises.',
   heroTitle: 'Je construis des projets digitaux avec la puissance de l’IA.',
   heroSubtitle: 'Solopreneur assisté par IA, j’aide les entrepreneurs et entreprises à transformer rapidement leurs idées en sites, SaaS, automatisations et plateformes concrètes.',
   primaryCta: 'Discuter de mon projet',

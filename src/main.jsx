@@ -14,10 +14,10 @@ const navItems = [
 const iconMap = { Bot, BrainCircuit, Code2, Globe2, Layers3, Rocket, Search, ShoppingCart, Target, Workflow };
 
 const fallbackContent = {
-  seoTitle: 'Mills Rocket — Création de sites, SaaS et automatisations IA',
-  metaDescription: 'Mills Rocket accompagne entrepreneurs, startups et entreprises dans la création rapide de sites web, plateformes SaaS, outils métiers, automatisations IA et projets digitaux sur mesure.',
-  ogTitle: 'Mills Rocket — Création de sites, SaaS et automatisations IA',
-  ogDescription: 'Création rapide de sites web, plateformes SaaS, outils métiers, automatisations IA et projets digitaux sur mesure.',
+  seoTitle: 'Florent Moulin | Solopreneur assisté par IA',
+  metaDescription: 'Je conçois et lance des sites web, SaaS, automatisations IA et outils métiers pour entrepreneurs, startups et entreprises.',
+  ogTitle: 'Florent Moulin | Solopreneur assisté par IA',
+  ogDescription: 'Je conçois et lance des sites web, SaaS, automatisations IA et outils métiers pour entrepreneurs, startups et entreprises.',
   heroTitle: 'Je construis des projets digitaux avec la puissance de l’IA.',
   heroSubtitle: 'Solopreneur assisté par IA, j’aide les entrepreneurs et entreprises à transformer rapidement leurs idées en sites, SaaS, automatisations et plateformes concrètes.',
   primaryCta: 'Discuter de mon projet',
@@ -124,6 +124,14 @@ function useSiteData() {
     setMeta('description', data.content.metaDescription);
     setProperty('og:title', data.content.ogTitle);
     setProperty('og:description', data.content.ogDescription);
+    setProperty('og:site_name', 'Mills Rocket');
+    setProperty('og:url', 'https://millsrocket.com/');
+    setProperty('og:image', 'https://millsrocket.com/og-image.jpg');
+    setProperty('og:image:width', '1200');
+    setProperty('og:image:height', '630');
+    setMeta('twitter:title', data.content.ogTitle || data.content.seoTitle);
+    setMeta('twitter:description', data.content.ogDescription || data.content.metaDescription);
+    setMeta('twitter:image', 'https://millsrocket.com/og-image.jpg');
   }, [data.content]);
 
   return { ...data, reload: load };
