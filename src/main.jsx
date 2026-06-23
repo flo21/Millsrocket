@@ -34,7 +34,7 @@ const fallbackContent = {
   ],
   founderTitle: 'Qui est derrière Mills Rocket ?',
   founderText: 'Je m’appelle Florent Moulin.\n\nDepuis plus de 10 ans, je crée des sites web, développe des outils digitaux et accompagne des entreprises dans leurs projets numériques.\n\nJ’ai travaillé dans le développement web, le recrutement, le business development, l’immobilier, le marketing digital et la création d’entreprises.\n\nAujourd’hui, j’ai choisi un modèle différent : celui du solopreneur assisté par l’IA.\n\nGrâce aux outils d’intelligence artificielle, je peux concevoir, développer et lancer des projets beaucoup plus rapidement qu’une structure traditionnelle.\n\nMon objectif n’est pas de vendre du temps mais de créer des solutions concrètes qui répondent à un besoin réel.\n\nJe développe également mes propres projets afin de tester en permanence de nouvelles idées, technologies et stratégies de lancement.',
-  founderImage: '/florent-moulin-founder.png',
+  founderImage: '/florent-moulin-founder.jpg',
   founderName: 'Florent Moulin',
   founderRole: 'Fondateur de Mills Rocket',
   founderProjects: ['Spotykite', 'Signal Immo', 'MillsBank', 'Mills Rocket Lab'],
@@ -302,7 +302,7 @@ function FounderSection({ content }) {
           </div>
         </div>
         <aside className="founder-profile">
-          <img src={content.founderImage || '/florent-moulin-founder.png'} alt="Portrait professionnel de Florent Moulin" />
+          <img src={content.founderImage || '/florent-moulin-founder.jpg'} alt="Portrait professionnel de Florent Moulin" />
           <div>
             <strong>{content.founderName}</strong>
             <span>{content.founderRole}</span>
