@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { ArrowRight, Bot, BrainCircuit, CheckCircle2, Code2, ExternalLink, FileText, Globe2, Layers3, LayoutDashboard, LogOut, Mail, Menu, Pencil, Plus, Rocket, Save, Search, ShoppingCart, Sparkles, Target, Trash2, Workflow, X } from 'lucide-react';
+import { ArrowRight, Bot, BrainCircuit, CheckCircle2, Code2, Eye, ExternalLink, FileText, Globe2, Layers3, LayoutDashboard, LogOut, Mail, Menu, Pencil, Plus, Rocket, Save, Search, ShoppingCart, Sparkles, Target, Trash2, Workflow, X } from 'lucide-react';
 import './styles.css';
 
 const navItems = [
@@ -381,19 +381,44 @@ function Lab({ content }) {
 
 function Contact({ content }) {
   const [status, setStatus] = React.useState('');
+  const [submitting, setSubmitting] = React.useState(false);
 
   async function submit(event) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    setSubmitting(true);
+    setStatus('');
+    const form = new FormData(formElement);
     try {
-      await api('/api/contact', {
+      const response = await fetch('/api/contact', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.fromEntries(form.entries())),
       });
-      event.currentTarget.reset();
-      setStatus('Demande envoyée.');
+
+      const text = await response.text();
+      let result = {};
+      if (text) {
+        try {
+          result = JSON.parse(text);
+        } catch {
+          result = {};
+        }
+      }
+
+      if (response.ok) {
+        formElement.reset();
+        setStatus(result.message || 'Votre demande a bien été envoyée.');
+        return;
+      }
+
+      console.error('Contact form submission failed', { status: response.status, body: result });
+      setStatus('Une erreur est survenue. Réessayez.');
     } catch (error) {
-      setStatus(error.message);
+      console.error('Contact form submission failed', error);
+      setStatus('Une erreur est survenue. Réessayez.');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -406,6 +431,7 @@ function Contact({ content }) {
         <div className="contact-note"><Mail size={20} /><span>Contact direct via millsrocket.com</span></div>
       </div>
       <form className="contact-form" onSubmit={submit}>
+        <label className="honeypot">Website<input type="text" name="website" tabIndex="-1" autoComplete="off" /></label>
         <label>Nom<input type="text" name="name" autoComplete="name" required /></label>
         <label>Email<input type="email" name="email" autoComplete="email" required /></label>
         <label>Téléphone<input type="tel" name="phone" autoComplete="tel" /></label>
@@ -416,14 +442,14 @@ function Contact({ content }) {
           </select>
         </label>
         <label>Budget estimé
-          <select name="estimatedBudget" defaultValue="">
+          <select name="budget" defaultValue="">
             <option value="" disabled>Choisir une fourchette</option>
             <option>Moins de 2 000 €</option><option>2 000 € - 5 000 €</option><option>5 000 € - 10 000 €</option><option>10 000 € et plus</option>
           </select>
         </label>
-        <label className="full-field">Message<textarea name="message" rows="6" required /></label>
+        <label className="full-field">Message<textarea name="message" rows="6" maxLength="5000" required /></label>
         {status && <p className="form-status full-field">{status}</p>}
-        <button className="button button-primary full-field" type="submit">Envoyer ma demande <ArrowRight size={18} /></button>
+        <button className="button button-primary full-field" type="submit" disabled={submitting}>{submitting ? 'Envoi en cours...' : 'Envoyer ma demande'} {!submitting && <ArrowRight size={18} />}</button>
       </form>
     </section>
   );
@@ -476,11 +502,15 @@ const blankSolution = { title: '', shortDescription: '', detailedDescription: ''
 
 function Admin({ navigate }) {
   const [token, setToken] = React.useState(localStorage.getItem('millsrocket_token'));
-  const [tab, setTab] = React.useState('content');
+  const initialTab = window.location.pathname === '/admin/leads' ? 'leads' : 'content';
+  const [tab, setTab] = React.useState(initialTab);
   const [content, setContent] = React.useState(fallbackContent);
   const [references, setReferences] = React.useState([]);
   const [solutions, setSolutions] = React.useState([]);
-  const [contacts, setContacts] = React.useState([]);
+  const [leads, setLeads] = React.useState([]);
+  const [leadStats, setLeadStats] = React.useState({ total: 0, new: 0, contacted: 0, won: 0, lost: 0 });
+  const [leadStatuses, setLeadStatuses] = React.useState(['Nouveau', 'Contacté', 'Devis envoyé', 'Gagné', 'Perdu']);
+  const [selectedLead, setSelectedLead] = React.useState(null);
   const [editingReference, setEditingReference] = React.useState(null);
   const [editingSolution, setEditingSolution] = React.useState(null);
   const [message, setMessage] = React.useState('');
@@ -488,16 +518,18 @@ function Admin({ navigate }) {
   const loadAdmin = React.useCallback(async () => {
     if (!token) return;
     try {
-      const [nextContent, nextReferences, nextSolutions, nextContacts] = await Promise.all([
+      const [nextContent, nextReferences, nextSolutions, nextLeads] = await Promise.all([
         api('/api/content'),
         api('/api/references?all=1'),
         api('/api/solutions?all=1'),
-        api('/api/contact'),
+        api('/api/admin/leads'),
       ]);
       setContent({ ...fallbackContent, ...nextContent });
       setReferences(nextReferences);
       setSolutions(nextSolutions);
-      setContacts(nextContacts);
+      setLeads(nextLeads.leads || []);
+      setLeadStats(nextLeads.stats || { total: 0, new: 0, contacted: 0, won: 0, lost: 0 });
+      setLeadStatuses(nextLeads.statuses || ['Nouveau', 'Contacté', 'Devis envoyé', 'Gagné', 'Perdu']);
     } catch (error) {
       if (error.message.includes('Session')) {
         localStorage.removeItem('millsrocket_token');
@@ -543,14 +575,23 @@ function Admin({ navigate }) {
     await loadAdmin();
   }
 
+  function switchTab(nextTab) {
+    setTab(nextTab);
+    if (nextTab === 'leads') {
+      window.history.replaceState({}, '', '/admin/leads');
+    } else if (window.location.pathname === '/admin/leads') {
+      window.history.replaceState({}, '', '/admin');
+    }
+  }
+
   return (
     <main className="admin-shell">
       <aside className="admin-sidebar">
         <div className="brand"><span className="brand-mark"><Rocket size={18} /></span><span>Mills Rocket</span></div>
-        <button className={tab === 'content' ? 'active' : ''} onClick={() => setTab('content')}><FileText size={18} /> Contenus</button>
-        <button className={tab === 'references' ? 'active' : ''} onClick={() => setTab('references')}><LayoutDashboard size={18} /> Références</button>
-        <button className={tab === 'solutions' ? 'active' : ''} onClick={() => setTab('solutions')}><Sparkles size={18} /> Solutions</button>
-        <button className={tab === 'contacts' ? 'active' : ''} onClick={() => setTab('contacts')}><Mail size={18} /> Demandes</button>
+        <button className={tab === 'content' ? 'active' : ''} onClick={() => switchTab('content')}><FileText size={18} /> Contenus</button>
+        <button className={tab === 'references' ? 'active' : ''} onClick={() => switchTab('references')}><LayoutDashboard size={18} /> Références</button>
+        <button className={tab === 'solutions' ? 'active' : ''} onClick={() => switchTab('solutions')}><Sparkles size={18} /> Solutions</button>
+        <button className={tab === 'leads' ? 'active' : ''} onClick={() => switchTab('leads')}><Mail size={18} /> Leads {leadStats.new > 0 && <span className="admin-badge">{leadStats.new}</span>}</button>
         <button onClick={logout}><LogOut size={18} /> Déconnexion</button>
       </aside>
       <section className="admin-main">
@@ -572,7 +613,7 @@ function Admin({ navigate }) {
             {editingSolution && <SolutionForm item={editingSolution} onCancel={() => setEditingSolution(null)} onSave={saveSolution} />}
           </CrudPanel>
         )}
-        {tab === 'contacts' && <Contacts contacts={contacts} reload={loadAdmin} remove={remove} />}
+        {tab === 'leads' && <Leads leads={leads} stats={leadStats} statuses={leadStatuses} selectedLead={selectedLead} setSelectedLead={setSelectedLead} reload={loadAdmin} remove={remove} />}
       </section>
     </main>
   );
@@ -679,24 +720,96 @@ function EntityForm({ title, form, setForm, fields, onCancel, onSave }) {
   );
 }
 
-function Contacts({ contacts, reload, remove }) {
-  async function toggle(item) {
-    await api(`/api/contact/${item.id}`, { method: 'PATCH', body: JSON.stringify({ status: item.status === 'traité' ? 'nouveau' : 'traité' }) });
+function Leads({ leads, stats, statuses, selectedLead, setSelectedLead, reload, remove }) {
+  async function updateStatus(lead, status) {
+    const updated = await api(`/api/admin/leads/${lead.id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+    setSelectedLead(updated);
     await reload();
   }
+
   return (
-    <div className="admin-card">
-      <div className="admin-card-head"><h2>Demandes reçues</h2></div>
-      <div className="admin-table-wrap">
-        <table className="admin-table">
-          <thead><tr><th>Date</th><th>Nom</th><th>Email</th><th>Téléphone</th><th>Projet</th><th>Budget</th><th>Message</th><th>Statut</th><th>Actions</th></tr></thead>
-          <tbody>{contacts.map((item) => (
-            <tr key={item.id}><td>{item.createdAt}</td><td>{item.name}</td><td>{item.email}</td><td>{item.phone}</td><td>{item.projectType}</td><td>{item.estimatedBudget}</td><td>{item.message}</td><td>{item.status}</td><td className="admin-actions"><button onClick={() => toggle(item)}><CheckCircle2 size={16} /></button><button onClick={() => remove(`/api/contact/${item.id}`, item.name)}><Trash2 size={16} /></button></td></tr>
-          ))}</tbody>
-        </table>
+    <div className="leads-layout">
+      <div className="admin-card full-field">
+        <div className="admin-card-head"><h2>Dashboard leads</h2></div>
+        <div className="lead-stats">
+          <StatCard label="Total" value={stats.total} />
+          <StatCard label="Nouveaux" value={stats.new} />
+          <StatCard label="Contactés" value={stats.contacted} />
+          <StatCard label="Gagnés" value={stats.won} />
+          <StatCard label="Perdus" value={stats.lost} />
+        </div>
       </div>
+
+      <div className="admin-card">
+        <div className="admin-card-head"><h2>Leads</h2></div>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Date</th><th>Nom</th><th>Email</th><th>Téléphone</th><th>Type de projet</th><th>Budget</th><th>Statut</th><th>Actions</th></tr></thead>
+            <tbody>{leads.map((lead) => (
+              <tr key={lead.id}>
+                <td>{formatDate(lead.createdAt)}</td>
+                <td>{lead.name}</td>
+                <td>{lead.email}</td>
+                <td>{lead.phone}</td>
+                <td>{lead.projectType}</td>
+                <td>{lead.budget}</td>
+                <td><span className="lead-status">{lead.status}</span></td>
+                <td className="admin-actions">
+                  <button title="Voir le détail" onClick={() => setSelectedLead(lead)}><Eye size={16} /></button>
+                  <button title="Supprimer" onClick={() => remove(`/api/admin/leads/${lead.id}`, lead.name)}><Trash2 size={16} /></button>
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <aside className="admin-card lead-detail">
+        {selectedLead ? (
+          <>
+            <div className="admin-card-head"><h2>Détail lead</h2><button className="admin-icon-button" onClick={() => setSelectedLead(null)}><X size={18} /></button></div>
+            <dl>
+              <dt>Nom</dt><dd>{selectedLead.name}</dd>
+              <dt>Email</dt><dd><a href={`mailto:${selectedLead.email}`}>{selectedLead.email}</a></dd>
+              <dt>Téléphone</dt><dd>{selectedLead.phone || 'Non renseigné'}</dd>
+              <dt>Type de projet</dt><dd>{selectedLead.projectType || 'Non renseigné'}</dd>
+              <dt>Budget</dt><dd>{selectedLead.budget || 'Non renseigné'}</dd>
+              <dt>Date de création</dt><dd>{formatDate(selectedLead.createdAt)}</dd>
+              <dt>Statut actuel</dt><dd><span className="lead-status">{selectedLead.status}</span></dd>
+              <dt>Message complet</dt><dd className="lead-message">{selectedLead.message}</dd>
+            </dl>
+            <div className="status-buttons">
+              {statuses.map((status) => (
+                <button key={status} className={selectedLead.status === status ? 'active' : ''} onClick={() => updateStatus(selectedLead, status)}>{status}</button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="empty-detail">
+            <Mail size={28} />
+            <p>Sélectionne un lead pour consulter le détail et modifier son statut.</p>
+          </div>
+        )}
+      </aside>
     </div>
   );
+}
+
+function StatCard({ label, value }) {
+  return (
+    <article className="stat-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  const normalized = String(value).includes('T') ? value : String(value).replace(' ', 'T');
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
 }
 
 function App() {
@@ -710,7 +823,7 @@ function App() {
     '/contact': <Contact {...siteData} />,
   };
 
-  if (path === '/admin') return <Admin navigate={navigate} />;
+  if (path === '/admin' || path === '/admin/leads') return <Admin navigate={navigate} />;
 
   return (
     <>

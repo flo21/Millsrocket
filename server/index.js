@@ -67,7 +67,42 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'nouveau',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    phone TEXT NOT NULL DEFAULT '',
+    projectType TEXT NOT NULL DEFAULT '',
+    budget TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Nouveau',
+    createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
 `);
+
+const leadStatuses = ['Nouveau', 'Contacté', 'Devis envoyé', 'Gagné', 'Perdu'];
+
+function migrateContactRequestsToLeads() {
+  const leadCount = db.prepare('SELECT COUNT(*) AS count FROM leads').get().count;
+  const oldCount = db.prepare('SELECT COUNT(*) AS count FROM contact_requests').get().count;
+  if (leadCount > 0 || oldCount === 0) return;
+
+  const rows = db.prepare('SELECT * FROM contact_requests ORDER BY id ASC').all();
+  const insert = db.prepare(`INSERT INTO leads
+    (name, email, phone, projectType, budget, message, status, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const tx = db.transaction((items) => {
+    items.forEach((row) => {
+      const status = row.status === 'traité' ? 'Contacté' : 'Nouveau';
+      insert.run(row.name, row.email, row.phone, row.project_type, row.estimated_budget, row.message, status, row.created_at, row.created_at);
+    });
+  });
+  tx(rows);
+}
+
+migrateContactRequestsToLeads();
 
 function seedDefaults() {
   const contentCount = db.prepare('SELECT COUNT(*) AS count FROM content').get().count;
@@ -140,6 +175,31 @@ function solutionRow(row) {
     icon: row.icon,
     order: row.display_order,
     active: Boolean(row.active),
+  };
+}
+
+function leadRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    projectType: row.projectType,
+    budget: row.budget,
+    message: row.message,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function leadStats(rows) {
+  return {
+    total: rows.length,
+    new: rows.filter((lead) => lead.status === 'Nouveau').length,
+    contacted: rows.filter((lead) => lead.status === 'Contacté').length,
+    won: rows.filter((lead) => lead.status === 'Gagné').length,
+    lost: rows.filter((lead) => lead.status === 'Perdu').length,
   };
 }
 
@@ -262,47 +322,62 @@ app.delete('/api/solutions/:id', requireAuth, (req, res) => {
   res.status(204).end();
 });
 
-app.get('/api/contact', requireAuth, (req, res) => {
-  const rows = db.prepare('SELECT * FROM contact_requests ORDER BY created_at DESC').all();
-  res.json(rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    phone: row.phone,
-    projectType: row.project_type,
-    estimatedBudget: row.estimated_budget,
-    message: row.message,
-    status: row.status,
-    createdAt: row.created_at,
-  })));
-});
-
 app.post('/api/contact', (req, res) => {
   const item = req.body || {};
-  if (!item.name || !item.email || !item.message) {
+  if (String(item.website || '').trim()) {
+    return res.json({ success: true, message: 'Votre demande a bien été envoyée.' });
+  }
+
+  const name = String(item.name || '').trim();
+  const email = String(item.email || '').trim();
+  const message = String(item.message || '').trim();
+
+  if (!name || !email || !message) {
     return res.status(400).json({ error: 'Nom, email et message sont requis.' });
   }
-  const result = db.prepare(`INSERT INTO contact_requests
-    (name, email, phone, project_type, estimated_budget, message)
-    VALUES (?, ?, ?, ?, ?, ?)`).run(
-      item.name,
-      item.email,
-      item.phone || '',
+
+  if (message.length > 5000) {
+    return res.status(400).json({ error: 'Le message est limité à 5000 caractères.' });
+  }
+
+  db.prepare(`INSERT INTO leads
+    (name, email, phone, projectType, budget, message, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'Nouveau')`).run(
+      name,
+      email,
+      String(item.phone || '').trim(),
       item.projectType || '',
-      item.estimatedBudget || '',
-      item.message,
+      item.budget || item.estimatedBudget || '',
+      message,
     );
-  res.status(201).json({ id: result.lastInsertRowid, status: 'nouveau' });
+
+  res.status(201).json({ success: true, message: 'Votre demande a bien été envoyée.' });
 });
 
-app.patch('/api/contact/:id', requireAuth, (req, res) => {
-  const status = req.body?.status === 'traité' ? 'traité' : 'nouveau';
-  db.prepare('UPDATE contact_requests SET status = ? WHERE id = ?').run(status, req.params.id);
-  res.json({ id: Number(req.params.id), status });
+app.get('/api/admin/leads', requireAuth, (req, res) => {
+  const rows = db.prepare('SELECT * FROM leads ORDER BY createdAt DESC, id DESC').all().map(leadRow);
+  res.json({ leads: rows, stats: leadStats(rows), statuses: leadStatuses });
 });
 
-app.delete('/api/contact/:id', requireAuth, (req, res) => {
-  db.prepare('DELETE FROM contact_requests WHERE id = ?').run(req.params.id);
+app.get('/api/admin/leads/:id', requireAuth, (req, res) => {
+  const row = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Lead introuvable.' });
+  res.json(leadRow(row));
+});
+
+app.patch('/api/admin/leads/:id/status', requireAuth, (req, res) => {
+  const status = String(req.body?.status || '');
+  if (!leadStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Statut invalide.' });
+  }
+  db.prepare('UPDATE leads SET status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?').run(status, req.params.id);
+  const row = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Lead introuvable.' });
+  res.json(leadRow(row));
+});
+
+app.delete('/api/admin/leads/:id', requireAuth, (req, res) => {
+  db.prepare('DELETE FROM leads WHERE id = ?').run(req.params.id);
   res.status(204).end();
 });
 
