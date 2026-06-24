@@ -213,7 +213,7 @@ function ProjectCard({ project }) {
         <span>{project.type}</span>
         <span className="status">{project.status}</span>
       </div>
-      {project.image && <img className="project-image" src={project.image} alt="" />}
+      <img className="project-image" src={project.image || '/millsrocket-og.png'} alt="" />
       <h3>{project.name}</h3>
       <p>{project.shortDescription}</p>
       <div className="tags">
@@ -686,9 +686,67 @@ function ContentEditor({ content, setContent, onSubmit }) {
 
 function ReferenceForm({ item, onCancel, onSave }) {
   const [form, setForm] = React.useState({ ...item, skills: (item.skills || []).join(', ') });
-  return <EntityForm title={item.id ? 'Modifier la référence' : 'Ajouter une référence'} form={form} setForm={setForm} onCancel={onCancel} onSave={() => onSave(form)} fields={[
-    ['name', 'Nom du projet'], ['type', 'Type de projet'], ['shortDescription', 'Description courte', 'textarea'], ['detailedDescription', 'Description détaillée', 'textarea'], ['skills', 'Compétences utilisées'], ['status', 'Statut', 'select', ['lancé', 'en développement', 'référence client']], ['image', 'Image'], ['projectLink', 'Lien du projet'], ['order', 'Ordre d’affichage', 'number'], ['active', 'Actif', 'checkbox'],
-  ]} />;
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState('');
+
+  async function uploadImage(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setUploadError('');
+    try {
+      const body = new FormData();
+      body.append('image', file);
+      const token = localStorage.getItem('millsrocket_token');
+      const response = await fetch('/api/admin/uploads/reference-image', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || 'Upload impossible.');
+      }
+      setForm((current) => ({ ...current, image: result.url }));
+    } catch (error) {
+      setUploadError(error.message || 'Upload impossible.');
+    } finally {
+      setUploading(false);
+      event.target.value = '';
+    }
+  }
+
+  return (
+    <div className="admin-modal">
+      <div className="admin-card admin-form-grid">
+        <div className="admin-card-head full-field"><h2>{item.id ? 'Modifier la référence' : 'Ajouter une référence'}</h2><button className="admin-icon-button" onClick={onCancel}><X size={18} /></button></div>
+        <label>Nom du projet<input value={form.name || ''} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+        <label>Type de projet<input value={form.type || ''} onChange={(e) => setForm({ ...form, type: e.target.value })} /></label>
+        <label className="full-field">Description courte<textarea rows="3" value={form.shortDescription || ''} onChange={(e) => setForm({ ...form, shortDescription: e.target.value })} /></label>
+        <label className="full-field">Description détaillée<textarea rows="4" value={form.detailedDescription || ''} onChange={(e) => setForm({ ...form, detailedDescription: e.target.value })} /></label>
+        <label>Compétences utilisées<input value={form.skills || ''} onChange={(e) => setForm({ ...form, skills: e.target.value })} /></label>
+        <label>Statut<select value={form.status || 'en développement'} onChange={(e) => setForm({ ...form, status: e.target.value })}><option>lancé</option><option>en développement</option><option>référence client</option></select></label>
+        <label>Lien du projet<input value={form.projectLink || ''} onChange={(e) => setForm({ ...form, projectLink: e.target.value })} /></label>
+        <label>Ordre d’affichage<input type="number" value={form.order || 0} onChange={(e) => setForm({ ...form, order: Number(e.target.value) })} /></label>
+        <label className="full-field">Image URL<input value={form.image || ''} onChange={(e) => setForm({ ...form, image: e.target.value })} /></label>
+        <div className="reference-upload full-field">
+          <div className="upload-actions">
+            <label className="admin-button upload-button">
+              {uploading ? 'Upload en cours...' : 'Uploader une image'}
+              <input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={uploadImage} disabled={uploading} />
+            </label>
+            {form.image && <button className="button button-secondary" type="button" onClick={() => setForm({ ...form, image: '' })}>Supprimer l’image</button>}
+          </div>
+          {uploadError && <p className="admin-error">{uploadError}</p>}
+          <img className="reference-preview" src={form.image || '/millsrocket-og.png'} alt="Aperçu référence" />
+        </div>
+        <label className="checkbox-field">Actif<input type="checkbox" checked={Boolean(form.active)} onChange={(e) => setForm({ ...form, active: e.target.checked })} /></label>
+        <button className="button button-secondary" type="button" onClick={onCancel}>Annuler</button>
+        <button className="button button-primary" type="button" onClick={() => onSave(form)}><Save size={18} /> Enregistrer</button>
+      </div>
+    </div>
+  );
 }
 
 function SolutionForm({ item, onCancel, onSave }) {

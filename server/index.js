@@ -6,6 +6,8 @@ import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import Database from 'better-sqlite3';
+import multer from 'multer';
+import fs from 'node:fs/promises';
 import { defaultContent, defaultReferences, defaultSolutions } from './defaults.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,9 +18,28 @@ const port = Number(process.env.PORT || 4174);
 const jwtSecret = process.env.JWT_SECRET || 'local-dev-secret-change-me';
 const adminEmail = process.env.ADMIN_EMAIL || 'admin@millsrocket.com';
 const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH || '$2b$12$rPGl9oohM1us6l.97MG/W.4862mnGlyePMagMhLD0sqv/zEZi.Sna';
+const referenceUploadDir = path.join(rootDir, 'public', 'uploads', 'references');
+const allowedImageTypes = new Map([
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp'],
+]);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase().replace('.', '');
+    const validExtension = ['jpg', 'jpeg', 'png', 'webp'].includes(ext);
+    if (!allowedImageTypes.has(file.mimetype) || !validExtension) {
+      return cb(new Error('Format non autorisé. Utilisez jpg, jpeg, png ou webp.'));
+    }
+    return cb(null, true);
+  },
+});
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+await fs.mkdir(referenceUploadDir, { recursive: true });
 
 db.pragma('journal_mode = WAL');
 db.exec(`
@@ -322,6 +343,37 @@ app.delete('/api/solutions/:id', requireAuth, (req, res) => {
   res.status(204).end();
 });
 
+app.post('/api/admin/uploads/reference-image', requireAuth, (req, res) => {
+  upload.single('image')(req, res, async (error) => {
+    if (error) {
+      const message = error.code === 'LIMIT_FILE_SIZE' ? 'Image trop lourde. Taille maximale : 5 Mo.' : error.message;
+      return res.status(400).json({ success: false, error: message });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'Aucun fichier reçu.' });
+    }
+
+    const extension = allowedImageTypes.get(req.file.mimetype);
+    if (!extension) {
+      return res.status(400).json({ success: false, error: 'Format non autorisé.' });
+    }
+
+    const safeBase = path.basename(req.file.originalname, path.extname(req.file.originalname))
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase()
+      .slice(0, 48) || 'reference';
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${safeBase}.${extension}`;
+    const filepath = path.join(referenceUploadDir, filename);
+
+    await fs.writeFile(filepath, req.file.buffer);
+    return res.status(201).json({ success: true, url: `/uploads/references/${filename}` });
+  });
+});
+
 app.post('/api/contact', (req, res) => {
   const item = req.body || {};
   if (String(item.website || '').trim()) {
@@ -381,6 +433,7 @@ app.delete('/api/admin/leads/:id', requireAuth, (req, res) => {
   res.status(204).end();
 });
 
+app.use('/uploads', express.static(path.join(rootDir, 'public', 'uploads')));
 app.use(express.static(path.join(rootDir, 'dist')));
 app.use((req, res, next) => {
   if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
