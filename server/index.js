@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import multer from 'multer';
 import fs from 'node:fs/promises';
 import { defaultContent, defaultReferences, defaultSolutions } from './defaults.js';
+import { getStructuredData, SEO_PAGES } from '../src/seo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -434,6 +435,60 @@ app.delete('/api/admin/leads/:id', requireAuth, (req, res) => {
 });
 
 app.use('/uploads', express.static(path.join(rootDir, 'public', 'uploads')));
+function escapeHtml(value) {
+  return String(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;');
+}
+
+function setHtmlMeta(html, attribute, key, content) {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`<meta\\b(?=[^>]*\\b${attribute}=["']${escapedKey}["'])[^>]*>`, 'i');
+  const value = escapeHtml(content);
+  if (pattern.test(html)) {
+    return html.replace(pattern, (tag) => {
+      const contentPattern = /\bcontent=(['"])[\s\S]*?\1/i;
+      return contentPattern.test(tag) ? tag.replace(contentPattern, `content="${value}"`) : tag.replace(/\s*\/?\s*>$/, ` content="${value}" />`);
+    });
+  }
+  return html.replace('</head>', `    <meta ${attribute}="${key}" content="${value}" />\n  </head>`);
+}
+
+function addSeoToHtml(html, route) {
+  const page = SEO_PAGES[route];
+  html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(page.title)}</title>`);
+  html = setHtmlMeta(html, 'name', 'description', page.description);
+  html = setHtmlMeta(html, 'property', 'og:title', page.title);
+  html = setHtmlMeta(html, 'property', 'og:description', page.description);
+  html = setHtmlMeta(html, 'property', 'og:url', page.canonical);
+  html = setHtmlMeta(html, 'property', 'og:type', 'website');
+  html = setHtmlMeta(html, 'property', 'og:site_name', 'Mills Rocket');
+  html = setHtmlMeta(html, 'property', 'og:image', page.image);
+  html = setHtmlMeta(html, 'property', 'og:image:width', '1200');
+  html = setHtmlMeta(html, 'property', 'og:image:height', '675');
+  html = setHtmlMeta(html, 'name', 'twitter:card', 'summary_large_image');
+  html = setHtmlMeta(html, 'name', 'twitter:title', page.title);
+  html = setHtmlMeta(html, 'name', 'twitter:description', page.description);
+  html = setHtmlMeta(html, 'name', 'twitter:image', page.image);
+  const canonicalPattern = /<link\b(?=[^>]*\brel=["']canonical["'])[^>]*>/i;
+  const canonical = `<link rel="canonical" href="${page.canonical}" />`;
+  html = canonicalPattern.test(html) ? html.replace(canonicalPattern, canonical) : html.replace('</head>', `    ${canonical}\n  </head>`);
+  const structuredData = JSON.stringify(getStructuredData(route)).replaceAll('<', '\\u003c');
+  const structuredPattern = /<script\b(?=[^>]*\bid=["']page-structured-data["'])[^>]*>[\s\S]*?<\/script>/i;
+  const structuredTag = `<script type="application/ld+json" id="page-structured-data">${structuredData}</script>`;
+  html = structuredPattern.test(html) ? html.replace(structuredPattern, structuredTag) : html.replace('</head>', `    ${structuredTag}\n  </head>`);
+  return html;
+}
+
+async function serveSeoPage(route, res, next) {
+  try {
+    const html = await fs.readFile(path.join(rootDir, 'dist', 'index.html'), 'utf8');
+    res.type('html').send(addSeoToHtml(html, route));
+  } catch (error) { next(error); }
+}
+
+app.get('/', (req, res, next) => serveSeoPage('/', res, next));
+for (const route of ['/ecommerce', '/chatgpt-ads', '/outils-ia']) {
+  app.get(route, (req, res, next) => serveSeoPage(route, res, next));
+}
 app.use(express.static(path.join(rootDir, 'dist')));
 app.use((req, res, next) => {
   if (req.method !== 'GET' || req.path.startsWith('/api')) return next();

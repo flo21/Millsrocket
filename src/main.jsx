@@ -1,11 +1,19 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { ArrowRight, Bot, BrainCircuit, CheckCircle2, Code2, Eye, ExternalLink, FileText, Globe2, Layers3, LayoutDashboard, LogOut, Mail, Menu, Pencil, Plus, Rocket, Save, Search, ShoppingCart, Sparkles, Target, Trash2, Workflow, X } from 'lucide-react';
+import { ArrowRight, Bot, BrainCircuit, CheckCircle2, Code2, Eye, ExternalLink, FileText, Globe2, Layers3, LayoutDashboard, LogOut, Mail, Pencil, Plus, Rocket, Save, Search, ShoppingCart, Sparkles, Target, Trash2, Workflow, X } from 'lucide-react';
 import './styles.css';
+import EcommercePage from './EcommercePage.jsx';
+import ChatGPTAdsPage from './ChatGPTAdsPage.jsx';
+import ToolsAiPage from './ToolsAiPage.jsx';
+import BusinessHomePage from './BusinessHomePage.jsx';
+import SiteHeader from './SiteHeader.jsx';
+import { getStructuredData, SEO_PAGES } from './seo.js';
 
 const navItems = [
   { label: 'Accueil', href: '/' },
   { label: 'Solutions', href: '/solutions' },
+  { label: 'E-commerce', href: '/ecommerce' },
+  { label: 'ChatGPT Ads', href: '/chatgpt-ads' },
   { label: 'Portfolio', href: '/portfolio' },
   { label: 'Lab', href: '/lab' },
   { label: 'Contact', href: '/contact' },
@@ -99,7 +107,7 @@ async function api(path, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
-function useSiteData() {
+function useSiteData(path) {
   const [data, setData] = React.useState({ content: fallbackContent, solutions: [], references: [], loading: true });
 
   const load = React.useCallback(async () => {
@@ -120,21 +128,59 @@ function useSiteData() {
   }, [load]);
 
   React.useEffect(() => {
+    const pageSeo = SEO_PAGES[path];
+    if (pageSeo) {
+      const { title, description, canonical, image } = pageSeo;
+      document.title = title;
+      setMeta('description', description);
+      setMeta('twitter:card', 'summary_large_image');
+      setMeta('twitter:title', title);
+      setMeta('twitter:description', description);
+      setMeta('twitter:image', image);
+      setProperty('og:title', title);
+      setProperty('og:description', description);
+      setProperty('og:type', 'website');
+      setProperty('og:site_name', 'Mills Rocket');
+      setProperty('og:url', canonical);
+      setProperty('og:image', image);
+      setProperty('og:image:width', '1200');
+      setProperty('og:image:height', '675');
+      setCanonical(canonical);
+      setStructuredData(getStructuredData(path));
+      return;
+    }
     document.title = data.content.seoTitle || fallbackContent.seoTitle;
     setMeta('description', data.content.metaDescription);
     setProperty('og:title', data.content.ogTitle);
     setProperty('og:description', data.content.ogDescription);
     setProperty('og:site_name', 'Mills Rocket');
     setProperty('og:url', 'https://millsrocket.com/');
+    setProperty('og:type', 'website');
     setProperty('og:image', 'https://millsrocket.com/og-image.jpg');
     setProperty('og:image:width', '1200');
     setProperty('og:image:height', '630');
     setMeta('twitter:title', data.content.ogTitle || data.content.seoTitle);
     setMeta('twitter:description', data.content.ogDescription || data.content.metaDescription);
+    setMeta('twitter:card', 'summary_large_image');
     setMeta('twitter:image', 'https://millsrocket.com/og-image.jpg');
-  }, [data.content]);
+    setCanonical(`https://millsrocket.com${path === '/' ? '/' : path}`);
+    setStructuredData(null);
+  }, [data.content, path]);
 
   return { ...data, reload: load };
+}
+
+function setCanonical(href) {
+  let tag = document.querySelector('link[rel="canonical"]');
+  if (!tag) { tag = document.createElement('link'); tag.rel = 'canonical'; document.head.appendChild(tag); }
+  tag.href = href;
+}
+
+function setStructuredData(data) {
+  let tag = document.querySelector('#page-structured-data');
+  if (!data) { tag?.remove(); return; }
+  if (!tag) { tag = document.createElement('script'); tag.type = 'application/ld+json'; tag.id = 'page-structured-data'; document.head.appendChild(tag); }
+  tag.textContent = JSON.stringify(data);
 }
 
 function setMeta(name, content) {
@@ -155,33 +201,6 @@ function NavLink({ href, children, onNavigate, className }) {
     }}>
       {children}
     </a>
-  );
-}
-
-function Header({ navigate }) {
-  const [open, setOpen] = React.useState(false);
-
-  return (
-    <header className="site-header">
-      <NavLink className="brand" href="/" onNavigate={navigate}>
-        <span className="brand-mark"><Rocket size={19} /></span>
-        <span>Mills Rocket</span>
-      </NavLink>
-      <nav className={open ? 'nav nav-open' : 'nav'} aria-label="Navigation principale">
-        {navItems.map((item) => (
-          <NavLink key={item.href} href={item.href} onNavigate={(href) => {
-            setOpen(false);
-            navigate(href);
-          }}>
-            {item.label}
-          </NavLink>
-        ))}
-      </nav>
-      <NavLink className="header-cta" href="/contact" onNavigate={navigate}>Discuter</NavLink>
-      <button className="menu-button" type="button" aria-label="Ouvrir le menu" onClick={() => setOpen((value) => !value)}>
-        {open ? <X size={22} /> : <Menu size={22} />}
-      </button>
-    </header>
   );
 }
 
@@ -377,6 +396,14 @@ function Lab({ content }) {
       </div>
     </section>
   );
+}
+
+function MethodPage() {
+  return <main className="section page-section standalone-business-page"><SectionIntro kicker="Méthode" title="Comprendre. Construire. Mesurer." text="Mills Rocket part du problème business, met en œuvre la solution adaptée et mesure son impact sur l’acquisition, la marge ou l’efficacité." /><div className="method-grid"><article className="method-card"><span>01</span><h3>Comprendre</h3><p>Identifier les contraintes et les leviers ayant le plus d’impact.</p></article><article className="method-card"><span>02</span><h3>Construire</h3><p>Créer la stratégie, le process, la landing page, l’automatisation ou l’outil nécessaire.</p></article><article className="method-card"><span>03</span><h3>Mesurer</h3><p>Suivre les résultats et concentrer les ressources sur ce qui fonctionne.</p></article></div></main>;
+}
+
+function AboutPage() {
+  return <main className="section page-section standalone-business-page"><SectionIntro kicker="À propos" title="Un interlocuteur capable de comprendre le business et de construire la solution." text="Mills Rocket intervient à l’intersection de la stratégie, des opérations et de la technologie." /><div className="lab-panel"><div><h3>Une approche pragmatique</h3><p>Nous cherchons d’abord à comprendre où se situe le problème, puis nous utilisons la technologie uniquement lorsqu’elle permet d’obtenir un meilleur résultat.</p></div><div className="lab-list"><div className="lab-item"><CheckCircle2 size={18} /> Interlocuteur unique</div><div className="lab-item"><CheckCircle2 size={18} /> Vision business</div><div className="lab-item"><CheckCircle2 size={18} /> Capacité d’exécution et prototypage rapide</div></div></div></main>;
 }
 
 function Contact({ content }) {
@@ -872,20 +899,26 @@ function formatDate(value) {
 
 function App() {
   const { path, navigate } = useRoute();
-  const siteData = useSiteData();
+  const siteData = useSiteData(path);
   const pages = {
     '/': <Home {...siteData} navigate={navigate} />,
     '/solutions': <SolutionsPage {...siteData} />,
     '/portfolio': <Portfolio {...siteData} />,
     '/lab': <Lab {...siteData} />,
     '/contact': <Contact {...siteData} />,
+    '/methode': <MethodPage />,
+    '/a-propos': <AboutPage />,
   };
 
   if (path === '/admin' || path === '/admin/leads') return <Admin navigate={navigate} />;
+  if (path === '/') return <BusinessHomePage />;
+  if (path === '/ecommerce') return <EcommercePage />;
+  if (path === '/chatgpt-ads') return <ChatGPTAdsPage />;
+  if (path === '/outils-ia') return <ToolsAiPage />;
 
   return (
     <>
-      <Header navigate={navigate} />
+      <SiteHeader />
       <main>{pages[path] || pages['/']}</main>
       <Footer navigate={navigate} />
     </>
